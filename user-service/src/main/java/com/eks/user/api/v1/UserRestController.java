@@ -15,7 +15,6 @@ public class UserRestController {
     @GetMapping(value = "/users", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> findUsers() {
         log.info("start find user");
-        log.info("test");
         return ResponseEntity.ok().body("find users");
     }
 }
