@@ -74,6 +74,7 @@ jobs:
   # Step 3 : 환경(Profile)별 Docker image 업로드
   push-image:
     needs: [build-jar, detect-changes]
+    if: ${{ needs.detect-changes.outputs.services != '[]' }} # 변경 사항 없으면 스킵 (혹은 needs에서 처리됨)
     strategy:
       matrix:
         service: ${{ fromJson(needs.detect-changes.outputs.services) }}
@@ -88,36 +89,51 @@ jobs:
           name: ${{ matrix.service }}-jar
           path: ${{ matrix.service }}-service/build/libs/
 
-      #  Docker 빌드 및 푸시
+      # QEMU 설정 (ARM64 빌드 지원을 위해 필수!)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # Docker Buildx 설정 (멀티 플랫폼 빌드 도구)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      #  Docker 로그인 수행
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and Push Image
+
+      # 태그 리스트 생성
+      - name: Generate Docker Tags
+        id: meta
         run: |
           IMAGE_NAME="youngmin1085/${{ matrix.service }}-service"
-          
+          SHORT_SHA=${GITHUB_SHA::7}
+
           # Git Tag로 푸시된 경우 (Production 릴리즈)
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v} # v1.2.3 -> 1.2.3
-            echo "Production Release: $VERSION"
-            docker build -t $IMAGE_NAME:$VERSION \
-                   -t $IMAGE_NAME:latest \
-                   ./${{ matrix.service }}-service
-            docker push $IMAGE_NAME:$VERSION
-            docker push $IMAGE_NAME:latest
+            TAGS="$IMAGE_NAME:$VERSION,$IMAGE_NAME:latest"
           else
             if [[ $GITHUB_REF == refs/heads/stg ]]; then
               ENV_TAG="stg"
             else
               ENV_TAG="dev"
             fi
-            echo "Environment: $ENV_TAG"
-            
-            docker build -t $IMAGE_NAME:${{ github.sha }} \
-                         -t $IMAGE_NAME:$ENV_TAG \
-                         ./${{ matrix.service }}-service
-            docker push $IMAGE_NAME:${{ github.sha }}
-            docker push $IMAGE_NAME:$ENV_TAG
+
+            # 태그: commit-hash, dev(or stg)
+            TAGS="$IMAGE_NAME:${ENV_TAG}-${SHORT_SHA}"
           fi
+          echo "Generated Tags: $TAGS"
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      # 멀티 플랫폼 빌드 및 푸시
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service }}-service
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          # 여기에 arm64를 추가해야 Mac에서 잘 받아집니다
+          platforms: linux/amd64,linux/arm64
