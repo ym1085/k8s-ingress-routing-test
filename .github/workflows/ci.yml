@@ -113,11 +113,11 @@ jobs:
             else
               ENV_TAG="dev"
             fi
+            SHORT_SHA=${GITHUB_SHA::7}
             echo "Environment: $ENV_TAG"
-            
-            docker build -t $IMAGE_NAME:${{ github.sha }} \
-                         -t $IMAGE_NAME:$ENV_TAG \
+
+            docker build -t $IMAGE_NAME:${ENV_TAG}-${SHORT_SHA} \
                          ./${{ matrix.service }}-service
-            docker push $IMAGE_NAME:${{ github.sha }}
-            docker push $IMAGE_NAME:$ENV_TAG
+            docker push $IMAGE_NAME:${ENV_TAG}-${SHORT_SHA}
+            # docker push $IMAGE_NAME:$ENV_TAG
           fi
